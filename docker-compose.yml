@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+
+  airflow-webserver:
+    container_name: airflow_container
+    hostname: airflow
+    image: puckel/docker-airflow
+    ports:
+      - '8080:8080'
+    networks:
+      - etl_pipeline
+    volumes:
+      - ./data/airflow/data:/usr/local/airflow/data
+      - ./data/airflow/logs:/usr/local/airflow/logs
+      - ./data/airflow/dags:/usr/local/airflow/dags
+      - ./data/airflow/requirements/requirements.txt:/requirements.txt
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://airflow:8080/admin/" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    container_name: minio_container
+    hostname: minio_storage
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    ports: 
+      - '9000:9000'
+      - '9001:9001'
+    networks:
+      - etl_pipeline
+    volumes: 
+      - ./data/minio:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+
+  mongo:
+    container_name: mongo_container
+    hostname: mongo
+    image: mongo
+    ports:
+      - "27017:27017"
+    networks:
+      - etl_pipeline
+    restart: on-failure
+    volumes:
+      - ./data/mongodb:/data/mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo mongo:27017/test --quiet
+      interval: 60s
+      timeout: 20s
+      retries: 3
+
+  mongo-express:
+    container_name: mongo-express_container
+    hostname: mongo-express
+    image: mongo-express
+    depends_on:
+      - mongo
+    ports:
+      - "8081:8081"
+    networks:
+      - etl_pipeline
+    restart: on-failure
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_ADMIN_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_ADMIN_PASSWORD}
+      ME_CONFIG_MONGODB_URL: ${ME_URL}
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_BASIC_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_BASIC_PASSWORD}
+    healthcheck:
+      test: wget --quiet --tries=3 --spider http://admin:admin123@10.10.10.60:8081 || exit 1
+      interval: 60s
+      timeout: 20s
+      retries: 3
+
+  postgres:
+    container_name: postgres_container
+    hostname: postgres
+    image: postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - etl_pipeline
+    restart: on-failure
+    volumes:
+      - ./data/postgres:/data/postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+            test: ["CMD", "pg_isready"]
+            interval: 60s
+            timeout: 20s
+            retries: 3
+
+  pgadmin:
+    container_name: pgadmin_container
+    hostname: pgadmin4
+    image: dpage/pgadmin4
+    depends_on:
+      - postgres
+    ports:
+      - "5050:80"
+    networks:
+      - etl_pipeline
+    restart: on-failure
+    volumes:
+      - ./data/pgadmin:/var/lib/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    healthcheck:
+            test: ["CMD", "curl", "-f", "http://mypgadmin:80/misc/ping"]
+            interval: 60s
+            timeout: 20s
+            retries: 3
+
+networks:
+  etl_pipeline:
+    driver: bridge

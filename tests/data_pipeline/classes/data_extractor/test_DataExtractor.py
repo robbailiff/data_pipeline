@@ -1,0 +1,2 @@
+class TestDataExtractor:
+    pass
